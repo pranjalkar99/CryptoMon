@@ -1,53 +1,45 @@
 #!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
 
+# Update & install basic dependencies
 apt-get update
-apt-get install -y apt-transport-https ca-certificates curl clang llvm jq
-apt-get install -y libelf-dev libpcap-dev libbfd-dev binutils-dev build-essential make 
-apt-get install -y linux-tools-common linux-tools-5.15.0-41-generic bpfcc-tools python3-dev gcc
-apt-get install -y python3-pip
-apt-get install -y bsdutils
-apt-get install -y build-essential
-apt-get install -y pkgconf
-apt-get install -y llvm-12 clang-12
-apt-get install -y clang-format-12
-apt-get install -y zlib1g-dev libelf-dev
-apt-get install -y protobuf-compiler
-apt-get install -y python3-scapy
-apt-get install -y python3-motor
-apt-get install -y python3-psutil
-apt-get install -y python3-pyroute2
-apt-get install bpfcc-tools linux-headers-$(uname -r)
+apt-get install -y apt-transport-https ca-certificates curl clang llvm jq \
+    libelf-dev libpcap-dev libbfd-dev binutils-dev build-essential make \
+    linux-tools-common linux-tools-5.15.0-41-generic bpfcc-tools python3-dev gcc \
+    python3-pip bsdutils pkgconf llvm-12 clang-12 clang-format-12 zlib1g-dev \
+    protobuf-compiler python3-scapy python3-motor python3-psutil python3-pyroute2 \
+    bpfcc-tools linux-headers-$(uname -r) linux-tools-$(uname -r) python3-pymongo \
+    python3-fastapi python3-tinydb jc bpftrace
 
-# remove the '-12' suffixes
-for tool in "clang" "llc" "llvm-strip" 
-do 
-    path=$(which $tool-12) 
-    sudo ln -s $path ${path%-*} 
-done 
+# Remove the '-12' suffixes safely
+for tool in "clang" "llc" "llvm-strip"; do
+    path=$(which $tool-12 2>/dev/null || true)
+    if [ -n "$path" ] && [ ! -f "${path%-*}" ]; then
+        ln -s "$path" "${path%-*}"
+    fi
+done
 
-# TODO - find out why this doesn't work -MC
-sudo snap install --devmode bpftrace
+# Install JC via pip as well
+python3 -m pip install --no-cache-dir jc
 
-# uname -r returns kernel version
-# need linux-tools for kernel specific
-apt-get install -y linux-tools-$(uname -r)
+# --- MongoDB setup ---
 
-# api stuff
-apt-get install -y python3-pymongo
-apt-get install -y python3-fastapi
+# Remove old key if it exists
+rm -f /usr/share/keyrings/mongodb-server-7.0.gpg
 
-# install mongodb
-sudo apt-get install gnupg curl
-# curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
-#    sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg \
-#    --dearmor
-# echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-sudo apt-get update
-sudo apt-get install -y mongodb-org
-sudo systemctl daemon-reload
-sudo systemctl enable mongod
-sudo systemctl start mongod
+# Add GPG key and repository
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg
 
-apt-get install -y python3-tinydb
-apt-get install -y jc  # JC is JSON Converter, very useful.
-python3 -m pip install jc  # because JC is a good converter
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
+    | tee /etc/apt/sources.list.d/mongodb-org-7.0.list > /dev/null
+
+# Install MongoDB
+apt-get update
+apt-get install -y mongodb-org
+
+# Start MongoDB in the background (Docker-friendly)
+mkdir -p /data/db
+mongod --fork --logpath /var/log/mongod.log
+
+echo "Ubuntu setup complete. Container is ready."
